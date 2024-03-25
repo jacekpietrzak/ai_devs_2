@@ -1,0 +1,76 @@
+const url = 'https://tasks.aidevs.pl';
+
+async function authorize(TASKNAME) {
+  try {
+    const response = await fetch(`${url}/token/${TASKNAME}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        apikey: process.env.API_KEY,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Api call was not ok ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('auth res: ', result);
+    return result;
+  } catch (error) {
+    console.error('There has been a problem with your fetch operation:', error);
+  }
+}
+
+async function getData(TOKEN) {
+  try {
+    const response = await fetch(`${url}/task/${TOKEN}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Api call was not ok ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('exercise task: ', result);
+    return result;
+  } catch (error) {
+    console.error('There has been a problem with your fetch operation:', error);
+  }
+}
+
+async function postData(ANSWER, TOKEN) {
+  try {
+    const response = await fetch(`${url}/answer/${TOKEN}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        answer: ANSWER,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Api call was not ok ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('exercise answer: ', result);
+    return result;
+  } catch (error) {
+    console.error('There has been a problem with your fetch operation:', error);
+  }
+}
+
+module.exports = {
+  authorize,
+  getData,
+  postData,
+};
