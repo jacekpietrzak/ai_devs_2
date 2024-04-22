@@ -13,6 +13,7 @@ import {
   createEmbedding,
   createWhisper,
 } from './api/openaiApiLangchain.js';
+import { addUserSchema } from './schema.js';
 
 const TASKNAME = process.env.TASK_NAME;
 
@@ -21,13 +22,13 @@ async function postExerciseAnswer(taskname) {
   const authToken = authData.token;
   const exerciseData = await getTaskData(authToken);
 
-  const whisperResponse = await createWhisper('./data/mateusz.mp3');
+  // const whisperResponse = await createWhisper('./data/mateusz.mp3');
 
   // const questionResponse = await sendQuestion(content, authToken);
 
   // const embeddingResponse = await createEmbedding('Hawaiian pizza');
 
-  await postTaskData(whisperResponse, authToken);
+  await postTaskData(addUserSchema, authToken);
 }
 
 postExerciseAnswer(TASKNAME);
