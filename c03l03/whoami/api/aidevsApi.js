@@ -2,11 +2,14 @@ import * as https from 'https';
 import axios from 'axios';
 import fs from 'fs';
 
+import dotenv from 'dotenv';
+dotenv.config({ path: '../../.env' });
+
 const url = 'https://tasks.aidevs.pl';
 
 const httpsAgent = new https.Agent({
   rejectUnauthorized: false,
-  cert: fs.readFileSync('C:/Users/jacek.pietrzak/Downloads/aidevs.pem'),
+  cert: fs.readFileSync('../../certs/aidevs.pem'),
 });
 
 export async function authorize(TASKNAME) {

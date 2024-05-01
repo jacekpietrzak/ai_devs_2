@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-dotenv.config();
+dotenv.config({ path: '../../.env' });
 
 import * as fs from 'fs';
 
@@ -34,12 +34,12 @@ async function postExerciseAnswer(taskname) {
 
   fs.writeFileSync(
     'data/hints.md',
-    JSON.stringify(exerciseData.hint, null, 2),
+    `${JSON.stringify(exerciseData.hint, null, 2)}\n\n`,
     { flag: 'a' }
   );
 
-  // const loader = new TextLoader(`data/${fileName}`);
-  // const [doc] = await loader.load();
+  const loader = new TextLoader(`data/hints.md`);
+  const [doc] = await loader.load();
 
   // console.log('doc: ', doc.pageContent);
   // // const document = doc.pageContent.split('\n\n').map((content) => {
@@ -50,16 +50,16 @@ async function postExerciseAnswer(taskname) {
 
   // const embeddingResponse = await createEmbedding('Hawaiian pizza');
 
-  // const chatResponse = await createChatCompletion(
-  //   'gpt-3.5-turbo',
-  //   `Answer questions as truthfully using the context below and nothing more. If you don't know the answer, say "don't know". Return answer for the question in POLISH language, based on provided context. Maximum length for the answer is 200 characters.
+  const chatResponse = await createChatCompletion(
+    'gpt-3.5-turbo',
+    `Answer questions as truthfully using the context below and nothing more. If you don't know the answer, say "don't know". Return answer for the question in POLISH language, based on provided context. Maximum length for the answer is 200 characters.
 
-  //   context###
-  //   ${doc.pageContent}
-  //   ###context
-  //   `,
-  //   exerciseData.question
-  // );
+    context###
+    ${doc.pageContent}
+    ###context
+    `,
+    exerciseData.question
+  );
 
   // const questionResponse = await sendQuestion(content, authToken);
 
