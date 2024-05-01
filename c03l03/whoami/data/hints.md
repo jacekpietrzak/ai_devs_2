@@ -1,0 +1,1 @@
+"został adoptowany tuż po urodzeniu""uczęszczał do college, ale rzucił szkołę po jednym semestrze"
