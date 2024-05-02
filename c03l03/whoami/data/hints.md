@@ -1,8 +1,10 @@
-"często nosił jeansy i buty typu sneakers New Balance"
-
-"Jego oficjalna pensja wynosiła 1 dolar rocznie"
-
-"w 2005 roku wygłosił słynne przemówienie na pewnym uniwerytecie w USA"
+"często chodził boso po biurze"
 
 "często nosił jeansy i buty typu sneakers New Balance"
+
+"W momencie śmierci, jego majątek był szacowany na około 10,2 miliarda dolarów"
+
+"W momencie śmierci, jego majątek był szacowany na około 10,2 miliarda dolarów"
+
+"pracował jako technik w firmie Atari"
 
