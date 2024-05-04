@@ -21,81 +21,133 @@ import {
 
 import { TextLoader } from 'langchain/document_loaders/fs/text';
 import { Document } from 'langchain/document';
+import { OpenAIEmbeddings } from '@langchain/openai';
+import { v4 as uuidv4 } from 'uuid';
+import { QdrantClient } from '@qdrant/js-client-rest';
 import { sleep } from './helpers/sleep.js';
 
 const TASKNAME = process.env.TASK_NAME;
+const MEMORY_PATH = './data/archiwum_aidevs.json';
+const COLLECTION_NAME = 'aidevs_c03l04_search';
+
+const qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
+const embeddings = new OpenAIEmbeddings({
+  maxConcurrency: 5,
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 async function postExerciseAnswer(taskname) {
   const authData = await authorize(taskname);
   const authToken = authData.token;
   const exerciseData = await getTaskData(authToken);
+  const query = exerciseData.question;
 
-  const fileName = exerciseData.msg.split('/').pop();
+  console.log('query: ', query);
 
-  console.log(fileName);
-
-  const downloadResponse = await downloadAxios(
-    'https://unknow.news/archiwum_aidevs.json',
-    `data/${fileName}`,
-    0
+  const queryEmbedding = await embeddings.embedQuery(query);
+  const result = await qdrant.getCollections();
+  const indexed = result.collections.find(
+    (collection) => collection.name === COLLECTION_NAME
   );
+  console.log('collections result: ', result);
 
-  const loader = new TextLoader(`data/${fileName}`);
-  const [doc] = await loader.load();
-
-  console.log('doc: ', doc.pageContent);
-  const document = doc.pageContent.split('\n\n').map((content) => {
-    return new Document({
-      pageContent: content,
+  // Create collection if not exists
+  if (!indexed) {
+    await qdrant.createCollection(COLLECTION_NAME, {
+      vectors: { size: 1536, distance: 'Cosine', on_disk: true },
     });
+  }
+  const collectionInfo = await qdrant.getCollection(COLLECTION_NAME);
+
+  // Index documents if not indexed
+  if (!collectionInfo.points_count) {
+    // Read File
+
+    const fileName = exerciseData.msg.split('/').pop();
+
+    await downloadAxios(
+      'https://unknow.news/archiwum_aidevs.json',
+      `data/${fileName}`,
+      0
+    );
+
+    const loader = new TextLoader(`data/${fileName}`);
+    // const [memory] = await loader.load();
+
+    // const loader = new TextLoader(MEMORY_PATH);
+    let [memory] = await loader.load();
+
+    let documents = JSON.parse(memory.pageContent).map(
+      (document) =>
+        new Document({
+          pageContent: document.info,
+          metadata: {
+            url: document.url,
+            title: document.title,
+            date: document.date,
+          },
+        })
+    );
+
+    // return console.log('documents: ', documents);
+
+    // let documents = memory.pageContent
+    //   .split('},')
+    //   .map((content) => new Document({ pageContent: content }));
+
+    // return console.log('documents: ', documents);
+
+    // Add metadata
+    documents = documents.map((document) => {
+      document.metadata.source = COLLECTION_NAME;
+      document.metadata.content = document.pageContent;
+      document.metadata.uuid = uuidv4();
+      return document;
+    });
+
+    // Generate embeddings
+    const points = [];
+    for (const document of documents) {
+      const [embedding] = await embeddings.embedDocuments([
+        document.pageContent,
+      ]);
+      points.push({
+        id: document.metadata.uuid,
+        payload: document.metadata,
+        vector: embedding,
+      });
+    }
+
+    // Index
+    await qdrant.upsert(COLLECTION_NAME, {
+      wait: true,
+      batch: {
+        ids: points.map((point) => point.id),
+        vectors: points.map((point) => point.vector),
+        payloads: points.map((point) => point.payload),
+      },
+    });
+  }
+
+  // Search
+  const search = await qdrant.search(COLLECTION_NAME, {
+    vector: queryEmbedding,
+    limit: 1,
+    filter: {
+      must: [
+        {
+          key: 'source',
+          match: {
+            value: COLLECTION_NAME,
+          },
+        },
+      ],
+    },
   });
 
-  // const embeddingResponse = await createEmbedding('Hawaiian pizza');
+  console.log('search: ', search[0].payload.url);
 
-  // const chatResponse = await createChatCompletion(
-  //   'gpt-4',
-  //   `Give me some hints about a person and I will answer who it is but only if I am 100% sure that the answer is correct. Answer questions as truthfully using the context below and nothing more. If you don't know the answer, say "0". Return answer for the question based on provided context.
-
-  // //   context###
-  // //   ${doc.pageContent}
-  // //   ###context
-  // //   `
-  //   // exerciseData.question
-  // );
-
-  // console.log('chatResponse: ', chatResponse);
-
-  // if (chatResponse === '0') {
-  //   for (let i = 0; i < 6; i++) {
-  //     sleep(3000);
-  //     const exerciseData = await getTaskData(authToken);
-  //     fs.writeFileSync(
-  //       'data/hints.md',
-  //       `${JSON.stringify(exerciseData.hint, null, 2)}\n\n`,
-  //       { flag: 'a' }
-  //     );
-  //     const loader = new TextLoader(`data/hints.md`);
-  //     const [doc] = await loader.load();
-  //     const chatResponse = await createChatCompletion(
-  //       'gpt-4',
-  //       `Give me some hints about a person and I will answer who it is but only if I am 100% sure that the answer is correct. Answer questions as truthfully using the context below and nothing more. If you don't know the answer, say "0". Return answer for the question based on provided context. Return only name of the person.
-  //       Context###
-  //       ${doc.pageContent}
-  //       ###context`
-  //     );
-
-  //     console.log('chatResponse: ', chatResponse);
-
-  //     if (chatResponse !== '0') {
-  //       const authData = await authorize(taskname);
-  //       const authToken = authData.token;
-  //       await postTaskData(chatResponse, authToken);
-  //       console.log(`answered after ${i + 2} attempts`);
-  //       break;
-  //     }
-  //   }
-  // }
-  // const questionResponse = await sendQuestion(content, authToken);
+  await postTaskData(search[0].payload.url, authToken);
 }
 
 postExerciseAnswer(TASKNAME);
