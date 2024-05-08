@@ -1,8 +1,5 @@
 import dotenv from 'dotenv';
-// dotenv.config({ path: '../.env' });
 dotenv.config();
-
-import * as fs from 'fs';
 
 import {
   authorize,
@@ -11,150 +8,113 @@ import {
   sendQuestion,
 } from './api/aidevsApi.js';
 
-import { downloadAxios } from './api/download.js';
-
 import {
   createChatCompletion,
   createModeration,
   createEmbedding,
 } from './api/openaiApiLangchain.js';
 
-import { TextLoader } from 'langchain/document_loaders/fs/text';
-import { Document } from 'langchain/document';
-import { OpenAIEmbeddings } from '@langchain/openai';
-import { v4 as uuidv4 } from 'uuid';
-import { QdrantClient } from '@qdrant/js-client-rest';
+import axios from 'axios';
 
 const TASKNAME = process.env.TASK_NAME;
-const COLLECTION_NAME = 'aidevs_c03l05_people';
 
-const qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
-const embeddings = new OpenAIEmbeddings({
-  maxConcurrency: 5,
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-async function postExerciseAnswer(taskname) {
-  const authData = await authorize(taskname);
+async function postExerciseAnswer(TASKNAME) {
+  const authData = await authorize(TASKNAME);
   const authToken = authData.token;
   const exerciseData = await getTaskData(authToken);
-  const query = exerciseData.question;
 
-  console.log('query: ', query);
-
-  const queryEmbedding = await embeddings.embedQuery(query);
-  const result = await qdrant.getCollections();
-  const indexed = result.collections.find(
-    (collection) => collection.name === COLLECTION_NAME
-  );
-  console.log('collections result: ', result);
-
-  // Create collection if not exists
-  if (!indexed) {
-    await qdrant.createCollection(COLLECTION_NAME, {
-      vectors: { size: 1536, distance: 'Cosine', on_disk: true },
-    });
-  }
-  const collectionInfo = await qdrant.getCollection(COLLECTION_NAME);
-
-  // Index documents if not indexed
-  if (!collectionInfo.points_count) {
-    // Read File
-
-    const fileName = exerciseData.data.split('/').pop();
-
-    await downloadAxios(exerciseData.data, `data/${fileName}`, 0);
-
-    const loader = new TextLoader(`data/${fileName}`);
-    let [memory] = await loader.load();
-
-    // return console.log('memory: ', memory);
-
-    let documents = JSON.parse(memory.pageContent).map(
-      (document) =>
-        new Document({
-          pageContent: JSON.stringify(document),
-          metadata: {
-            imie: document.imie,
-            nazwisko: document.nazwisko,
-            wiek: document.wiek,
-            o_mnie: document.o_mnie,
-            ulubiona_postac_z_kapitana_bomby:
-              document.ulubiona_postac_z_kapitana_bomby,
-            ulubiony_serial: document.ulubiony_serial,
-            ulubiony_film: document.ulubiony_film,
-            ulubiony_kolor: document.ulubiony_kolor,
-          },
-        })
-    );
-
-    // Add metadata
-    documents = documents.map((document) => {
-      document.metadata.source = COLLECTION_NAME;
-      document.metadata.content = document.pageContent;
-      document.metadata.uuid = uuidv4();
-      return document;
-    });
-
-    // Generate embeddings
-    const points = [];
-    for (const document of documents) {
-      const [embedding] = await embeddings.embedDocuments([
-        document.pageContent,
-      ]);
-      points.push({
-        id: document.metadata.uuid,
-        payload: document.metadata,
-        vector: embedding,
-      });
-    }
-
-    // Index
-    await qdrant.upsert(COLLECTION_NAME, {
-      wait: true,
-      batch: {
-        ids: points.map((point) => point.id),
-        vectors: points.map((point) => point.vector),
-        payloads: points.map((point) => point.payload),
-      },
-    });
-  }
-
-  // Search;
-  const search = await qdrant.search(COLLECTION_NAME, {
-    vector: queryEmbedding,
-    limit: 1,
-    filter: {
-      must: [
-        {
-          key: 'source',
-          match: {
-            value: COLLECTION_NAME,
-          },
-        },
-      ],
-    },
-  });
-
-  console.log('search: ', search[0].payload.content);
-  console.log('question: ', exerciseData.question);
-
-  const context = search[0].payload.content;
   const model = 'gpt-3.5-turbo';
-  const systemMessage = `Answer questions as truthfully using the context below and nothing more. If you don't know the answer, say "don't know". Return answer for the question in POLISH language, based on provided context.
-  context ###  
-  ${context}
-  context ###`;
+  const systemMessage = `Alice here. To describe a user message for me as JSON with this exact structure {"type": "exchange_rate (question about currency)|current_population (question about population)|general (everything else)}, 
+  we need to follow these rules:
+- Always strictly follow the JSON structure described above with special care and attention.
+- IMPORTANT: JSON always has to have one property: type.
+- Tags should be semantic tags that describe and enrich the query.
+- Always return JSON and nothing else.
+
+Examples:
+###
+jaka jest populacja Niemiec?
+{"type": "current_population"}
+podaj aktualny kurs EURO
+{"type": "exchange_rate"}
+jak nazywa się stolica Czech?
+{"type": "general"}
+###`;
   const humanMessage = exerciseData.question;
   const chatResponse = await createChatCompletion(
     model,
     systemMessage,
     humanMessage
   );
+  console.log('chatResponse: ', JSON.parse(chatResponse));
 
-  // console.log('chatResponse: ', chatResponse);
+  const questionType = JSON.parse(chatResponse);
 
-  await postTaskData(chatResponse, authToken);
+  if (questionType.type === 'general') {
+    const model = 'gpt-3.5-turbo';
+    const systemMessage = `Alice here. I will answer your question and return answer as JSON with exact structure {"answer": "answer"}.
+ Strict rules you're obligated to follow throughout the conversation:
+ — always skip any additional comments.
+ — Answer questions as truthfully as possible using the context below and nothing else. If you don't know the answer, say, "I don't know.
+ - Always return JSON and nothing else.`;
+    const humanMessage = exerciseData.question;
+    const chatResponse = await createChatCompletion(
+      model,
+      systemMessage,
+      humanMessage
+    );
+    await postTaskData(chatResponse, authToken);
+    return console.log(chatResponse);
+  } else if (questionType.type === 'exchange_rate') {
+    const model = 'gpt-3.5-turbo';
+    const systemMessage = `Alice here. I will answer your question and return answer as JSON with exact structure {"currency_code": "answer"}.
+ Strict rules you're obligated to follow throughout the conversation:
+ - always skip any additional comments.
+ - Answer questions as truthfully as possible using the context below and nothing else. If you don't know the answer, say, "I don't know.
+ - Always return CURRENCY CODE and nothing else. 
+ - Always return JSON and nothing else.`;
+    const humanMessage = exerciseData.question;
+    const chatResponse = await createChatCompletion(
+      model,
+      systemMessage,
+      humanMessage
+    );
+
+    const currency_code = JSON.parse(chatResponse);
+    // return console.log(currency_code);
+    const response = await axios.get(
+      `http://api.nbp.pl/api/exchangerates/rates/a/${currency_code.currency_code}/`
+    );
+
+    console.log(response.data);
+    await postTaskData(response.data.rates[0].mid, authToken);
+
+    return console.log(response.data.rates[0].mid);
+  } else if (questionType.type === 'current_population') {
+    const model = 'gpt-3.5-turbo';
+    const systemMessage = `Alice here. I will answer your question and return answer as JSON with exact structure {"country": "answer"}.
+ Strict rules you're obligated to follow throughout the conversation:
+ - always skip any additional comments.
+ - Answer questions as truthfully as possible using the context below and nothing else. If you don't know the answer, say, "I don't know.
+ - Always return COUNTRY NAME in english and nothing else. 
+ - Always return JSON and nothing else.`;
+    const humanMessage = exerciseData.question;
+    const chatResponse = await createChatCompletion(
+      model,
+      systemMessage,
+      humanMessage
+    );
+
+    const country = JSON.parse(chatResponse);
+
+    // return console.log(country.country.toLowerCase());
+    const response = await axios.get(
+      `https://restcountries.com/v3.1/name/${country.country}?fields=population`
+    );
+
+    await postTaskData(response.data[0].population, authToken);
+    return console.log(response.data[0].population);
+  }
 }
 
 postExerciseAnswer(TASKNAME);
